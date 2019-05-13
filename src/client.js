@@ -28,6 +28,7 @@ import Logger from './logger';
 const debug = require('debug')('knex:client');
 const debugQuery = require('debug')('knex:query');
 const debugBindings = require('debug')('knex:bindings');
+const debugPool = require('debug')('knex:pool');
 const { POOL_CONFIG_OPTIONS } = require('./constants');
 
 // The base client provides the general structure
@@ -55,6 +56,11 @@ function Client(config = {}) {
   }
 
   this.connectionSettings = cloneDeep(config.connection || {});
+
+  if (config.pool) {
+    assign(this.connectionSettings, config.pool);
+  };
+
   if (this.driverName && config.connection) {
     this.initializeDriver();
     if (!config.pool || (config.pool && config.pool.max !== 0)) {
@@ -225,8 +231,9 @@ assign(Client.prototype, {
     return { min: 2, max: 10, propagateCreateError: true };
   },
 
-  getPoolSettings(poolConfig) {
+  getPoolSettings(poolConfig, isRead = false) {
     poolConfig = defaults({}, poolConfig, this.poolDefaults());
+    const name = this.dialect + ':' + this.driverName + ':' + this.__cid + (isRead ? ':read' : '');
 
     POOL_CONFIG_OPTIONS.forEach((option) => {
       if (option in poolConfig) {
@@ -249,8 +256,14 @@ assign(Client.prototype, {
     poolConfig.acquireTimeoutMillis = Math.min(...timeouts);
 
     return Object.assign(poolConfig, {
+      log: (str, level) => {
+        if (level == 'info') {
+          debugPool(level.toUpperCase() + ' pool ' + name + ' - ' + str);
+          debugPool(level.toUpperCase() + ' pool ' + name + ' - ' + str);
+        }
+      },
       create: () => {
-        return this.acquireRawConnection().tap((connection) => {
+        return this.acquireRawConnection(isRead).tap((connection) => {
           connection.__knexUid = uniqueId('__knexUid');
 
           if (poolConfig.afterCreate) {
@@ -266,7 +279,7 @@ assign(Client.prototype, {
             to discuss alternative apis
           `);
 
-          poolConfig.beforeDestroy(connection, function() {});
+          poolConfig.beforeDestroy(connection, function () { });
         }
 
         if (connection !== void 0) {
@@ -290,8 +303,22 @@ assign(Client.prototype, {
       this.logger.warn('The pool has already been initialized');
       return;
     }
-
+    if (config.pool) {
+      assign(this.connectionSettings, config.pool)
+    }
     this.pool = new Pool(this.getPoolSettings(config.pool));
+
+    // readReplicaConnectionSettings
+    // { readReplica: { connection } }
+    if (config.readReplica && config.readReplica.connection) {
+      this.readReplicaConnectionSettings = cloneDeep(config.readReplica.connection)
+      if (config.readReplica.pool) {
+        assign(this.readReplicaConnectionSettings, config.readReplica.pool)
+      }
+      this.readReplicaPool = new Pool(assign(this.poolDefaults(config.readReplica.pool || {}, true),
+        config.readReplica.pool))
+      this.hasReadReplica = true
+    }
   },
 
   validateConnection(connection) {
@@ -299,28 +326,33 @@ assign(Client.prototype, {
   },
 
   // Acquire a connection from the pool.
-  acquireConnection() {
+  acquireConnection(isRead) {
     if (!this.pool) {
       return Promise.reject(new Error('Unable to acquire a connection'));
     }
+    if (this.hasReadReplica && !this.readReplicaPool) {
+      return Promise.reject(new Error('Unable to acquire a connection for read replica'))
+    }
 
-    return Promise.try(() => this.pool.acquire().promise)
+    const pool = (this.hasReadReplica && isRead) ? this.readReplicaPool : this.pool;
+    return Promise.try(() => pool.acquire().promise)
       .tap((connection) => {
         debug('acquired connection from pool: %s', connection.__knexUid);
       })
       .catch(TimeoutError, () => {
         throw new Promise.TimeoutError(
           'Knex: Timeout acquiring a connection. The pool is probably full. ' +
-            'Are you missing a .transacting(trx) call?'
+          'Are you missing a .transacting(trx) call?'
         );
       });
   },
 
   // Releases a connection back to the connection pool,
   // returning a promise resolved when the connection is released.
-  releaseConnection(connection) {
+  releaseConnection(connection, isRead = false) {
     debug('releasing connection to pool: %s', connection.__knexUid);
-    const didRelease = this.pool.release(connection);
+    const pool = (this.hasReadReplica && isRead) ? this.readReplicaPool : this.pool;
+    const didRelease = pool.release(connection);
 
     if (!didRelease) {
       debug('pool refused connection: %s', connection.__knexUid);

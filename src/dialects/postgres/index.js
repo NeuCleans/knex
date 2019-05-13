@@ -11,6 +11,7 @@ import TableCompiler from './schema/tablecompiler';
 import SchemaCompiler from './schema/compiler';
 import { makeEscape } from '../../query/string';
 
+
 function Client_PG(config) {
   Client.apply(this, arguments);
   if (config.returning) {
@@ -103,14 +104,18 @@ assign(Client_PG.prototype, {
 
   // Get a raw connection, called by the `pool` whenever a new
   // connection needs to be added to the pool.
-  acquireRawConnection() {
+  acquireRawConnection(isRead = false) {
     const client = this;
-    return new Promise(function(resolver, rejecter) {
-      const connection = new client.driver.Client(client.connectionSettings);
-      connection.connect(function(err, connection) {
+    const settings = isRead ? client.readReplicaConnectionSettings : client.connectionSettings;
+
+    return new Promise(function (resolver, rejecter) {
+
+      const connection = new client.driver.Client(settings);
+      connection.connect(function (err, connection) {
         if (err) {
           return rejecter(err);
         }
+
         connection.on('error', (err) => {
           connection.__knex__disposed = err;
         });
@@ -118,7 +123,7 @@ assign(Client_PG.prototype, {
           connection.__knex__disposed = err || 'Connection ended unexpectedly';
         });
         if (!client.version) {
-          return client.checkVersion(connection).then(function(version) {
+          return client.checkVersion(connection).then(function (version) {
             client.version = version;
             resolver(connection);
           });
@@ -139,8 +144,8 @@ assign(Client_PG.prototype, {
   // In PostgreSQL, we need to do a version check to do some feature
   // checking on the database.
   checkVersion(connection) {
-    return new Promise(function(resolver, rejecter) {
-      connection.query('select version();', function(err, resp) {
+    return new Promise(function (resolver, rejecter) {
+      connection.query('select version();', function (err, resp) {
         if (err) return rejecter(err);
         resolver(/^PostgreSQL (.*?)( |$)/.exec(resp.rows[0].version)[1]);
       });
@@ -151,7 +156,7 @@ assign(Client_PG.prototype, {
   // is \? (e.g. knex.raw("\\?") since javascript requires '\' to be escaped too...)
   positionBindings(sql) {
     let questionCount = 0;
-    return sql.replace(/(\\*)(\?)/g, function(match, escapes) {
+    return sql.replace(/(\\*)(\?)/g, function (match, escapes) {
       if (escapes.length % 2) {
         return '?';
       } else {
@@ -181,7 +186,7 @@ assign(Client_PG.prototype, {
         ).join(', ')}]`;
         this.logger.warn(
           `Detected comma in searchPath "${path}".` +
-            `If you are trying to specify multiple schemas, use Array syntax: ${arraySyntax}`
+          `If you are trying to specify multiple schemas, use Array syntax: ${arraySyntax}`
         );
       }
       path = [path];
@@ -189,8 +194,8 @@ assign(Client_PG.prototype, {
 
     path = map(path, (schemaName) => `"${schemaName}"`).join(',');
 
-    return new Promise(function(resolver, rejecter) {
-      connection.query(`set search_path to ${path}`, function(err) {
+    return new Promise(function (resolver, rejecter) {
+      connection.query(`set search_path to ${path}`, function (err) {
         if (err) return rejecter(err);
         resolver(true);
       });
@@ -203,12 +208,12 @@ assign(Client_PG.prototype, {
       : require('pg-query-stream');
     const sql = obj.sql;
 
-    return new Promise(function(resolver, rejecter) {
+    return new Promise(function (resolver, rejecter) {
       const queryStream = connection.query(
         new PGQueryStream(sql, obj.bindings, options)
       );
 
-      queryStream.on('error', function(error) {
+      queryStream.on('error', function (error) {
         rejecter(error);
         stream.emit('error', error);
       });
@@ -231,8 +236,8 @@ assign(Client_PG.prototype, {
       queryConfig = extend(queryConfig, obj.options);
     }
 
-    return new Promise(function(resolver, rejecter) {
-      connection.query(queryConfig, function(err, response) {
+    return new Promise(function (resolver, rejecter) {
+      connection.query(queryConfig, function (err, response) {
         if (err) return rejecter(err);
         obj.response = response;
         resolver(obj);
@@ -271,7 +276,7 @@ assign(Client_PG.prototype, {
   },
 
   canCancelQuery: true,
-  cancelQuery(connectionToKill) {
+  cancelQuery(connectionToKill, isRead = false) {
     const acquiringConn = this.acquireConnection();
 
     // Error out if we can't acquire connection in time.
@@ -283,7 +288,7 @@ assign(Client_PG.prototype, {
         () => {
           // NOT returning this promise because we want to release the connection
           // in a non-blocking fashion
-          this.releaseConnection(conn);
+          this.releaseConnection(conn, isRead);
         }
       );
     });

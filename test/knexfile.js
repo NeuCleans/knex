@@ -13,18 +13,18 @@ var testIntegrationDialects = (
 ).match(/\w+/g);
 
 var pool = {
-  afterCreate: function(connection, callback) {
+  afterCreate: function (connection, callback) {
     assert.ok(typeof connection.__knexUid !== 'undefined');
     callback(null, connection);
   },
 };
 
 var mysqlPool = _.extend({}, pool, {
-  afterCreate: function(connection, callback) {
+  afterCreate: function (connection, callback) {
     Promise.promisify(connection.query, { context: connection })(
       "SET sql_mode='TRADITIONAL';",
       []
-    ).then(function() {
+    ).then(function () {
       callback(null, connection);
     });
   },
@@ -83,6 +83,11 @@ var testConfigs = {
       database: 'knex_test',
       user: 'postgres',
     },
+    readReplica: {
+      adapter: 'postgresql',
+      database: 'knex_test',
+      user: 'postgres',
+    },
     pool: pool,
     migrations: migrations,
     seeds: seeds,
@@ -130,7 +135,7 @@ var testConfigs = {
 // export only copy the specified dialects
 module.exports = _.reduce(
   testIntegrationDialects,
-  function(res, dialectName) {
+  function (res, dialectName) {
     res[dialectName] = testConfigs[dialectName];
     return res;
   },

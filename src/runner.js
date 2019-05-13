@@ -23,7 +23,7 @@ assign(Runner.prototype, {
   run() {
     const runner = this;
     return (
-      Promise.using(this.ensureConnection(), function(connection) {
+      Promise.using(this.ensureConnection(), function (connection) {
         runner.connection = connection;
 
         runner.client.emit('start', runner.builder);
@@ -43,7 +43,7 @@ assign(Runner.prototype, {
         // If there are any "error" listeners, we fire an error event
         // and then re-throw the error to be eventually handled by
         // the promise chain. Useful if you're wrapping in a custom `Promise`.
-        .catch(function(err) {
+        .catch(function (err) {
           if (runner.builder._events && runner.builder._events.error) {
             runner.builder.emit('error', err);
           }
@@ -52,7 +52,7 @@ assign(Runner.prototype, {
 
         // Fire a single "end" event on the builder when
         // all queries have successfully completed.
-        .tap(function() {
+        .tap(function () {
           runner.builder.emit('end');
         })
     );
@@ -79,7 +79,7 @@ assign(Runner.prototype, {
     const stream = new PassThrough({ objectMode: true });
 
     let hasConnection = false;
-    const promise = Promise.using(this.ensureConnection(), function(
+    const promise = Promise.using(this.ensureConnection(), function (
       connection
     ) {
       hasConnection = true;
@@ -112,7 +112,7 @@ assign(Runner.prototype, {
     // could be acquired.
     // If the connection was acquired, assume the error occurred in the client
     // code and has already been emitted on the stream. Don't emit it twice.
-    promise.catch(function(err) {
+    promise.catch(function (err) {
       if (!hasConnection) stream.emit('error', err);
     });
     return stream;
@@ -126,7 +126,7 @@ assign(Runner.prototype, {
   // "Runs" a query, returning a promise. All queries specified by the builder are guaranteed
   // to run in sequence, and on the same connection, especially helpful when schema building
   // and dealing with foreign key constraints, etc.
-  query: Promise.method(function(obj) {
+  query: Promise.method(function (obj) {
     const { __knexUid, __knexTxId } = this.connection;
 
     this.builder.emit('query', assign({ __knexUid, __knexTxId }, obj));
@@ -223,13 +223,13 @@ assign(Runner.prototype, {
     return queries.length === 1
       ? this.query(queries[0])
       : Promise.bind(this)
-          .return(queries)
-          .reduce(function(memo, query) {
-            return this.query(query).then(function(resp) {
-              memo.push(resp);
-              return memo;
-            });
-          }, []);
+        .return(queries)
+        .reduce(function (memo, query) {
+          return this.query(query).then(function (resp) {
+            memo.push(resp);
+            return memo;
+          });
+        }, []);
   },
 
   // Check whether there's a transaction flag, and that it has a connection.

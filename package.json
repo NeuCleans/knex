@@ -1,7 +1,7 @@
 {
-  "name": "knex",
+  "name": "knex-pool",
   "version": "0.16.7",
-  "description": "A batteries-included SQL query & schema builder for Postgres, MySQL and SQLite3 and the Browser",
+  "description": "A batteries-included SQL query & schema builder for Postgres with support for read-write replicas, MySQL and SQLite3 and the Browser",
   "main": "knex.js",
   "types": "types/index.d.ts",
   "engines": {
